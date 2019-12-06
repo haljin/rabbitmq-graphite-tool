@@ -184,6 +184,10 @@ func metricListen(uri string, queueName string, graphiteHost string, graphitePor
 	}
 	defer queueConn.Close()
 	defer queueChan.Close()
+	_, err = queueChan.QueueDeclare(queueName, false, true, false, false, nil)
+	if err != nil {
+		return
+	}
 	msgs, err := queueChan.Consume(queueName, "", true, false, false, false, nil)
 	if err != nil {
 		return
