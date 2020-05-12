@@ -142,13 +142,9 @@ func fetchExchangeMetrics(mgmtUri string, prefix string) (metrics []graphite.Met
 	return
 }
 
-func monitoring(uri string, queueName string, mgmtUri string, prefix string) {
-	var (
-		queueConn *amqp.Connection
-		queueChan *amqp.Channel
-		err       error
-	)
-	queueConn, queueChan, err = rabbitmqConnect(uri, queueName)
+func monitoring(graphiteHost string, graphitePort int, mgmtUri string, prefix string, rate int) {
+	var err error
+	graphiteConn, err := graphite.NewGraphite(graphiteHost, graphitePort)
 	if err != nil {
 		return
 	}
@@ -162,68 +158,29 @@ func monitoring(uri string, queueName string, mgmtUri string, prefix string) {
 			metrics = append(metrics, metric)
 		}
 		for _, metric := range metrics {
-			body := []byte(metric.Name + "\t" + metric.Value + "\t" + strconv.FormatInt(metric.Timestamp, 10))
-			msg := amqp.Publishing{ContentType: "text/plain", Body: body}
-			err = queueChan.Publish("", queueName, false, false, msg)
+			metric := graphite.Metric{Name: metric.Name, Value: metric.Value, Timestamp: metric.Timestamp}
+			err = graphiteConn.SendMetric(metric)
 			if err != nil {
-				log.Printf("publish err: %s", err)
 				return
 			}
-			//log.Printf("metric\t%s\t\t%s", metric.Name, metric.Value)
-		}
-		time.Sleep(time.Second * 5)
-	}
-	queueChan.Close()
-	queueConn.Close()
-}
 
-func metricListen(uri string, queueName string, graphiteHost string, graphitePort int) (err error) {
-	queueConn, queueChan, err := rabbitmqConnect(uri, queueName)
-	if nonFatalError("can't connect to rabbitmq", err, 5000) {
-		return
-	}
-	defer queueConn.Close()
-	defer queueChan.Close()
-	_, err = queueChan.QueueDeclare(queueName, false, true, false, false, nil)
-	if err != nil {
-		return
-	}
-	msgs, err := queueChan.Consume(queueName, "", true, false, false, false, nil)
-	if err != nil {
-		return
-	}
-	graphiteConn, err := graphite.NewGraphite(graphiteHost, graphitePort)
-	if err != nil {
-		return
-	}
-	for msg := range msgs {
-		data := strings.Split(string(msg.Body), "\t")
-		timestamp, _ := strconv.ParseInt(data[2], 10, 64)
-		//log.Printf("metric: %s = %s", data[0], data[1])
-		metric := graphite.Metric{Name: data[0], Value: data[1], Timestamp: timestamp}
-		err = graphiteConn.SendMetric(metric)
-		if err != nil {
-			return
 		}
+
+		time.Sleep(time.Second * time.Duration(rate))
 	}
-	return
 }
 
 func main() {
 	log.Printf("Welcome to rabbitmq-graphite-tool")
 	var (
-		queue    string
-		uri      string
 		mgmtUri  string
 		graphite string
 		prefix   string
+		rate     string
 		err      error
 	)
 
-	flag.StringVar(&queue,
-		"rabbitmq-queue", "graphite", "incoming queue name for graphite metrics")
-	flag.StringVar(&uri,
-		"rabbitmq-uri", "amqp://guest:guest@localhost:5672", "rabbitmq connection uri")
+	flag.StringVar(&rate, "rate", "5", "polling rate")
 	flag.StringVar(&mgmtUri,
 		"rabbitmq-mgmt-uri",
 		"http://guest:guest@localhost:15672", "rabbitmq managment plugin address host:port")
@@ -233,10 +190,10 @@ func main() {
 		"prefix", "rabbitmq.node01.", "prefix for rabbitmq monitoring in graphite")
 	flag.Parse()
 
-	rabbitUrl, err := url.Parse(uri)
+	rabbitUrl, err := url.Parse(mgmtUri)
 
 	if err != nil {
-		log.Fatalf("can't parse rabbitmq Url: %s", uri)
+		log.Fatalf("can't parse rabbitmq Url: %s", mgmtUri)
 		return
 	}
 
@@ -247,24 +204,14 @@ func main() {
 		return
 	}
 	graphitePort, _ := strconv.Atoi(_graphitePort)
+	parsedRate, _ := strconv.Atoi(rate)
 
-	log.Printf("rabbitmq-queue:     %s", queue)
 	log.Printf("rabbitmq-host:      %s", rabbitUrl.Host)
 	log.Printf("graphite-addr:      %s", graphiteHost)
 	log.Printf("prefix:             %s", prefix)
 
-	go func() {
-		for {
-			log.Printf("start monitoring")
-			monitoring(uri, queue, mgmtUri, prefix)
-			time.Sleep(time.Second)
-		}
-	}()
 	for {
-		err = metricListen(uri, queue, graphiteHost, graphitePort)
-		if err != nil {
-			log.Printf("err: %s", err)
-			time.Sleep(time.Second)
-		}
+		log.Printf("start monitoring")
+		monitoring(graphiteHost, graphitePort, mgmtUri, prefix, parsedRate)
 	}
 }
