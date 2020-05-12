@@ -75,6 +75,95 @@ func findString(query string, obj interface{}) (result string) {
 	return
 }
 
+func fetchNodeMetrics(mgmtUri string, prefix string) (metrics []graphite.Metric) {
+	url := mgmtUri + "/api/nodes"
+	response, statusCode, err := fetchUrl(url)
+	if err != nil || statusCode != 200 {
+		log.Printf("error fetch rabbiqmq nodes: %d - %s", statusCode, err)
+		return
+	}
+	var stats []interface{}
+	json.Unmarshal(response, &stats)
+	for _, stat := range stats {
+		name := findString("name", stat)
+		if name == "" {
+			continue
+		}
+		mem_used := findNumber("mem_used", stat)
+		fd_used := findNumber("fd_used", stat)
+		sockets_used := findNumber("sockets_used", stat)
+		proc_used := findNumber("proc_used", stat)
+		disk_free := findNumber("disk_free", stat)
+		mem_limit := findNumber("mem_limit", stat)
+		fd_total := findNumber("fd_total", stat)
+		sockets_total := findNumber("sockets_total", stat)
+		proc_total := findNumber("proc_total", stat)
+		disk_free_limit := findNumber("disk_free_limit", stat)
+		conn_created_rate := findNumber("connection_created_details.rate", stat)
+		conn_closed_rate := findNumber("connection_closed_details.rate", stat)
+		ch_created_rate := findNumber("channel_created_details.rate", stat)
+		ch_closed_rate := findNumber("channel_closed_details.rate", stat)
+
+		metric := graphite.Metric{Name: prefix + "." + name + ".mem_used",
+			Value: strconv.Itoa(int(mem_used)), Timestamp: time.Now().Unix()}
+		metrics = append(metrics, metric)
+
+		metric = graphite.Metric{Name: prefix + "." + name + ".fd_used",
+			Value: strconv.Itoa(int(fd_used)), Timestamp: time.Now().Unix()}
+		metrics = append(metrics, metric)
+
+		metric = graphite.Metric{Name: prefix + "." + name + ".sockets_used",
+			Value: strconv.Itoa(int(sockets_used)), Timestamp: time.Now().Unix()}
+		metrics = append(metrics, metric)
+
+		metric = graphite.Metric{Name: prefix + "." + name + ".proc_used",
+			Value: strconv.Itoa(int(proc_used)), Timestamp: time.Now().Unix()}
+		metrics = append(metrics, metric)
+
+		metric = graphite.Metric{Name: prefix + "." + name + ".disk_free",
+			Value: strconv.Itoa(int(disk_free)), Timestamp: time.Now().Unix()}
+		metrics = append(metrics, metric)
+
+		metric = graphite.Metric{Name: prefix + "." + name + ".mem_limit",
+			Value: strconv.Itoa(int(mem_limit)), Timestamp: time.Now().Unix()}
+		metrics = append(metrics, metric)
+
+		metric = graphite.Metric{Name: prefix + "." + name + ".fd_total",
+			Value: strconv.Itoa(int(fd_total)), Timestamp: time.Now().Unix()}
+		metrics = append(metrics, metric)
+
+		metric = graphite.Metric{Name: prefix + "." + name + ".sockets_total",
+			Value: strconv.Itoa(int(sockets_total)), Timestamp: time.Now().Unix()}
+		metrics = append(metrics, metric)
+
+		metric = graphite.Metric{Name: prefix + "." + name + ".proc_total",
+			Value: strconv.Itoa(int(proc_total)), Timestamp: time.Now().Unix()}
+		metrics = append(metrics, metric)
+
+		metric = graphite.Metric{Name: prefix + "." + name + ".disk_free_limit",
+			Value: strconv.Itoa(int(disk_free_limit)), Timestamp: time.Now().Unix()}
+		metrics = append(metrics, metric)
+
+		metric = graphite.Metric{Name: prefix + "." + name + ".conn_created_rate",
+			Value: strconv.Itoa(int(conn_created_rate)), Timestamp: time.Now().Unix()}
+		metrics = append(metrics, metric)
+
+		metric = graphite.Metric{Name: prefix + "." + name + ".conn_closed_rate",
+			Value: strconv.Itoa(int(conn_closed_rate)), Timestamp: time.Now().Unix()}
+		metrics = append(metrics, metric)
+
+		metric = graphite.Metric{Name: prefix + "." + name + ".ch_created_rate",
+			Value: strconv.Itoa(int(ch_created_rate)), Timestamp: time.Now().Unix()}
+		metrics = append(metrics, metric)
+
+		metric = graphite.Metric{Name: prefix + "." + name + ".ch_closed_rate",
+			Value: strconv.Itoa(int(ch_closed_rate)), Timestamp: time.Now().Unix()}
+		metrics = append(metrics, metric)
+
+	}
+	return
+}
+
 func fetchQueueMetrics(mgmtUri string, prefix string) (metrics []graphite.Metric) {
 	url := mgmtUri + "/api/queues"
 	response, statusCode, err := fetchUrl(url)
@@ -151,6 +240,9 @@ func monitoring(graphiteHost string, graphitePort int, mgmtUri string, prefix st
 	for {
 		log.Printf("fetch rabbitmq stats")
 		var metrics []graphite.Metric
+		for _, metric := range fetchNodeMetrics(mgmtUri, prefix) {
+			metrics = append(metrics, metric)
+		}
 		for _, metric := range fetchQueueMetrics(mgmtUri, prefix) {
 			metrics = append(metrics, metric)
 		}
